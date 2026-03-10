@@ -1,0 +1,186 @@
+import os
+import time
+import subprocess
+from pathlib import Path
+from typing import Any, Optional
+
+import httpx
+from dotenv import load_dotenv
+from prefect import flow, get_run_logger, task
+
+
+
+# ---------------------------------------------------------
+# Configuración de Rutas y Carga de Entorno
+# ---------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent
+ENV_PATH = BASE_DIR / ".env"
+load_dotenv(dotenv_path=ENV_PATH) # [cite: 1]
+
+AIRBYTE_BASE_URL = os.getenv("AIRBYTE_BASE_URL", "http://localhost:8000").rstrip("/")
+AIRBYTE_CLIENT_ID = os.getenv("AIRBYTE_CLIENT_ID")
+AIRBYTE_CLIENT_SECRET = os.getenv("AIRBYTE_CLIENT_SECRET")
+AIRBYTE_CONNECTION_ID = os.getenv("AIRBYTE_CONNECTION_ID")
+
+DBT_PROJECT_DIR = Path(os.getenv("DBT_PROJECT_DIR", str(BASE_DIR))).resolve()
+DBT_PROFILES_DIR = Path(os.getenv("DBT_PROFILES_DIR", str(BASE_DIR))).resolve()
+MOTHERDUCK_TOKEN = os.getenv("MOTHERDUCK_TOKEN") # [cite: 1]
+
+DBT_PROFILE_NAME = "tpfinal_dbt"
+DBT_TARGET_NAME = "dev"
+PUBLIC_API_BASE = f"{AIRBYTE_BASE_URL}/api/public/v1"
+
+
+# Verifica que el token se cargó
+if not os.getenv("MOTHERDUCK_TOKEN"):
+    print("ADVERTENCIA: MOTHERDUCK_TOKEN no encontrado en el entorno")
+ 
+
+ 
+# ---------------------------------------------------------
+# Helpers de Entorno
+# ---------------------------------------------------------
+def _dbt_env() -> dict[str, str]:
+    env = os.environ.copy()
+    # Cargamos el token del entorno actual
+    token = os.getenv("MOTHERDUCK_TOKEN")
+    
+    if token:
+        # Limpieza profunda: eliminamos comillas, espacios y saltos de línea
+        clean_token = token.replace('"', '').replace("'", "").strip()
+        env["MOTHERDUCK_TOKEN"] = clean_token
+        # Variable alternativa que dbt-duckdb a veces requiere
+        env["DBT_ENV_CUSTOM_ENV_MOTHERDUCK_TOKEN"] = clean_token
+    
+    env["DBT_PROJECT_DIR"] = str(DBT_PROJECT_DIR)
+    env["DBT_PROFILES_DIR"] = str(DBT_PROFILES_DIR)
+    return env
+
+def _run_command(dbt_args: list[str]) -> None:
+    logger = get_run_logger()
+    env = _dbt_env()
+    
+    # 1. Construcción del comando base
+    base_command = ["dbt"] + dbt_args + [
+        "--profiles-dir", str(DBT_PROFILES_DIR),
+        "--profile", DBT_PROFILE_NAME,
+        "--target", DBT_TARGET_NAME,
+    ]
+
+    # 2. AGREGAR AQUÍ: Inyectar el token como variable de dbt
+    token = env.get("MOTHERDUCK_TOKEN")
+    if token:
+        # Usamos llaves dobles {{ }} porque dbt espera un diccionario JSON/YAML
+        base_command.extend(["--vars", f"{{motherduck_token: {token}}}"])
+        logger.info("Token inyectado vía --vars")
+
+    # 3. Ejecución
+    logger.info(f"Ejecutando: {' '.join(base_command[:4])}... (token oculto)")
+    
+    result = subprocess.run(
+        base_command,
+        cwd=str(DBT_PROJECT_DIR),
+        env=env,
+        text=True,
+        capture_output=True,
+        shell=True, # Importante en Windows
+    )
+
+    if result.stdout:
+        logger.info(result.stdout)
+    
+    if result.returncode != 0:
+        logger.error(result.stderr)
+        raise RuntimeError(f"Error en dbt: {dbt_args[0]}")
+
+# ---------------------------------------------------------
+# Tareas del Pipeline
+# ---------------------------------------------------------
+@task(name="Extract and Load (Airbyte)")
+def run_airbyte_sync():
+    logger = get_run_logger()
+    auth_payload = {
+        "client_id": AIRBYTE_CLIENT_ID,
+        "client_secret": AIRBYTE_CLIENT_SECRET,
+        "grant-type": "client_credentials",
+    }
+    
+    with httpx.Client(timeout=30) as client:
+        # Obtención de token y disparo de sync
+        token_res = client.post(f"{AIRBYTE_BASE_URL}/api/v1/applications/token", json=auth_payload)
+        token_res.raise_for_status()
+        headers = {"Authorization": f"Bearer {token_res.json()['access_token']}"}
+
+        sync_res = client.post(f"{PUBLIC_API_BASE}/jobs", headers=headers, json={"connectionId": AIRBYTE_CONNECTION_ID, "jobType": "sync"})
+        sync_res.raise_for_status()
+        job_id = sync_res.json().get("jobId")
+        
+        logger.info(f"Sincronización iniciada (ID: {job_id})")
+        while True:
+            status = client.get(f"{PUBLIC_API_BASE}/jobs/{job_id}", headers=headers).json().get("status", "").lower()
+            if status in ["succeeded", "completed"]: break
+            if status in ["failed", "cancelled"]: raise RuntimeError(f"Job Airbyte {status}")
+            time.sleep(10)
+
+@task(name="dbt Transform")
+def transform(select=None):
+    _run_command(["deps"])
+    args = ["run"]
+    if select: args.extend(["--select", select])
+    _run_command(args)
+
+@task(name="dbt Test")
+def test_data(select=None):
+    args = ["test"]
+    if select: args.extend(["--select", select])
+    _run_command(args)
+
+@task(name="dbt Docs")
+def generate_docs():
+    _run_command(["docs", "generate"])
+
+# ---------------------------------------------------------
+# Flow y Despliegue Corregido
+# ---------------------------------------------------------
+@flow(name="Dvdrental ELT Pipeline")
+def ecommerce_pipeline(
+    run_extract: bool = True,
+    run_transform: bool = True,
+    run_tests: bool = True,
+    run_docs: bool = False,
+    dbt_select: Optional[str] = None,
+    # Se agrega este parámetro para evitar el SignatureMismatchError
+    validate_connections: bool = False 
+):
+    logger = get_run_logger()
+    logger.info("Iniciando pipeline ELT de Dvdrental")
+
+    if run_extract:
+        run_airbyte_sync()
+
+    if run_transform:
+        transform(select=dbt_select)
+
+    if run_tests:
+        test_data(select=dbt_select)
+
+    if run_docs:
+        generate_docs()
+
+    logger.info("Pipeline completado!")
+    return {"status": "success"}
+
+if __name__ == "__main__":
+    # Al ejecutar el .serve(), asegúrate de que los parámetros coincidan
+    ecommerce_pipeline.serve(
+        name="dvdrental-daily",
+        cron="0 6 * * *", 
+        parameters={
+            "run_extract": True,
+            "run_transform": True,
+            "run_tests": True,
+            "run_docs": False,
+            "dbt_select": "stg_orders stg_order_items stg_sessions",
+            "validate_connections": False # Añadido aquí también
+        }
+    )

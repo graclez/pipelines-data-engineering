@@ -1,0 +1,17 @@
+# dbt
+target/
+dbt_packages/
+logs/
+
+# Python venv
+dbt-env/
+__pycache__/
+*.pyc
+
+# Secrets
+profiles.yml
+.env
+
+# OS
+.DS_Store
+Thumbs.db

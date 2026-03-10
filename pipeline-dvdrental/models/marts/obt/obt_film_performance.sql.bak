@@ -1,0 +1,58 @@
+{{ config(materialized='table') }}
+
+with rentals as (
+    select * from {{ ref('fct_rental') }}
+),
+film as (
+    select * from {{ ref('dim_film') }}
+),
+film_cat as (
+    select * from {{ ref('agg_film_categories') }}
+),
+film_act as (
+    select * from {{ ref('agg_film_actors') }}
+)
+
+select
+    film.film_key,
+    film.title,
+    film.rating,
+    film.language_name,
+    film.rental_rate,
+    film.length,
+    film.replacement_cost,
+
+    film_cat.category_list,
+    film_cat.category_count,
+
+    film_act.actor_list,
+    film_act.actor_count,
+
+    -- Métricas
+    count(rentals.rental_key) as total_rentals,
+    sum(rentals.total_paid) as total_revenue,
+    avg(rentals.rental_days) as avg_rental_days,
+    avg(rentals.total_paid) as avg_revenue_per_rental,
+	count(rentals.rental_key) as total_rentals,
+	coalesce(sum(rentals.total_paid), 0) as total_revenue,
+	avg(rentals.rental_days) as avg_rental_days,
+	coalesce(avg(rentals.total_paid), 0) as avg_revenue_per_rental,
+	case when count(rentals.rental_key) > 0 then true else false end as is_rented
+
+from film
+left join rentals on film.film_key = rentals.film_key
+left join film_cat on film.film_key = film_cat.film_key
+left join film_act on film.film_key = film_act.film_key
+
+group by
+    film.film_key,
+    film.title,
+    film.rating,
+    film.language_name,
+    film.rental_rate,
+    film.length,
+    film.replacement_cost,
+    film_cat.category_list,
+    film_cat.category_count,
+    film_act.actor_list,
+    film_act.actor_count

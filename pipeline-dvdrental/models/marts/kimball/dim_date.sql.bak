@@ -1,0 +1,39 @@
+{{ config(materialized='table') }}
+
+with bounds as (
+  select
+    cast(min(rental_date) as date) as min_dt,
+    cast(max(rental_date) as date) as max_dt
+  from {{ ref('stg_rental') }}
+
+  union all
+
+  select
+    cast(min(payment_date) as date) as min_dt,
+    cast(max(payment_date) as date) as max_dt
+  from {{ ref('stg_payment') }}
+),
+rng as (
+  select
+    min(min_dt) as start_dt,
+    max(max_dt) as end_dt
+  from bounds
+),
+dates as (
+  select
+    d::date as date_day
+  from rng,
+  unnest(generate_series(start_dt, end_dt, interval 1 day)) as t(d)
+)
+select
+  date_day as date_key,
+  extract(year from date_day) as year,
+  extract(month from date_day) as month,
+  extract(day from date_day) as day,
+  extract(dow from date_day) as day_of_week,           -- 0=Sunday en DuckDB
+  strftime(date_day, '%A') as day_name,
+  strftime(date_day, '%B') as month_name,
+  extract(quarter from date_day) as quarter,
+  case when extract(dow from date_day) in (0,6) then true else false end as is_weekend
+from dates
+order by date_key

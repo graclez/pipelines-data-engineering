@@ -1,0 +1,219 @@
+version: 2
+
+models:
+  - name: dim_customer
+    description: Customer dimension.
+    columns:
+      - name: customer_key
+        tests: [not_null, unique]
+      - name: email
+        tests:
+          - dbt_expectations.expect_column_values_to_match_regex:
+              arguments:
+                regex: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+                row_condition: "email is not null"
+
+  - name: dim_film
+    columns:
+      - name: film_key
+        tests: [not_null, unique]
+      - name: rental_rate
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: false
+
+  - name: dim_store
+    columns:
+      - name: store_key
+        tests: [not_null, unique]
+
+  - name: dim_staff
+    columns:
+      - name: staff_key
+        tests: [not_null, unique]
+
+  - name: dim_date
+    columns:
+      - name: date_key
+        tests: [not_null, unique]
+
+  - name: fct_rental
+    description: Fact table representing rental transactions.
+    tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          arguments:
+            min_value: 1
+    columns:
+      - name: rental_key
+        tests: [not_null, unique]
+      - name: customer_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_key
+      - name: film_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_film')
+                field: film_key
+      - name: store_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_store')
+                field: store_key
+      - name: staff_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_staff')
+                field: staff_key
+      - name: rental_date_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+  - name: fct_payment
+    description: Fact table containing payment transactions.
+    columns:
+      - name: payment_key
+        tests: [not_null, unique]
+      - name: amount
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: false
+      - name: customer_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_key
+      - name: staff_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_staff')
+                field: staff_key
+  - name: dim_category
+    columns:
+      - name: category_key
+        tests: [not_null, unique]
+
+  - name: bridge_film_category
+    columns:
+      - name: film_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_film')
+                field: film_key
+      - name: category_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_category')
+                field: category_key
+
+  - name: dim_actor
+    columns:
+      - name: actor_key
+        tests: [not_null, unique]
+
+  - name: bridge_film_actor
+    columns:
+      - name: film_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_film')
+                field: film_key
+      - name: actor_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_actor')
+                field: actor_key
+  - name: obt_rentals
+    description: Denormalized table containing rental level analytics.
+    tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          arguments:
+            min_value: 1
+    columns:
+      - name: rental_key
+        tests: [not_null, unique]
+      - name: total_paid
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: false
+      - name: customer_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_key
+      - name: film_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_film')
+                field: film_key
+  - name: obt_film_performance
+    columns:
+      - name: film_key
+        tests: [not_null, unique]
+      - name: total_revenue
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: false
+      - name: total_rentals
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: false
+  - name: obt_customer_value
+    columns:
+      - name: customer_key
+        tests: [not_null, unique]
+
+      - name: lifetime_value
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: false
+
+      - name: total_rentals
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: false
+  - name: customer_favorite_category
+    columns:
+      - name: customer_key
+        tests:
+          - not_null
+          - unique
+
+  - name: obt_customer_value
+    columns:
+      - name: favorite_category_key
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_category')
+                field: category_key

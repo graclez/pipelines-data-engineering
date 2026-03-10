@@ -1,0 +1,83 @@
+{{ config(materialized='table') }}
+
+with rentals as (
+    select * from {{ ref('fct_rental') }}
+),
+customers as (
+    select * from {{ ref('dim_customer') }}
+),
+fav_cat as (
+    select * from {{ ref('customer_favorite_category') }}
+)
+
+select
+    c.customer_key,
+    c.first_name,
+    c.last_name,
+    c.email,
+    c.is_active,
+    c.created_date,
+
+    -- Métricas base
+    count(r.rental_key) as total_rentals,
+    sum(r.total_paid) as lifetime_value,
+    avg(r.total_paid) as avg_ticket,
+    min(r.rental_date) as first_rental_date,
+    max(r.rental_date) as last_rental_date,
+
+    date_diff('day', max(cast(r.rental_date as date)), current_date) as recency_days,
+
+    case
+        when count(r.rental_key) > 1
+        then date_diff(
+                'day',
+                min(cast(r.rental_date as date)),
+                max(cast(r.rental_date as date))
+             ) / count(r.rental_key)
+        else null
+    end as avg_days_between_rentals,
+
+    -- Categoría favorita
+    fav_cat.favorite_category_key,
+    fav_cat.favorite_category_name,
+    fav_cat.favorite_category_rentals,
+    fav_cat.favorite_category_revenue,
+	count(r.rental_key) as total_rentals,
+	coalesce(sum(r.total_paid), 0) as lifetime_value,
+	coalesce(avg(r.total_paid), 0) as avg_ticket,
+	min(r.rental_date) as first_rental_date,
+	max(r.rental_date) as last_rental_date,
+
+	case
+		when max(r.rental_date) is not null
+		then date_diff('day', max(cast(r.rental_date as date)), current_date)
+		else null
+	end as recency_days,
+
+	case
+		when count(r.rental_key) > 1
+		then date_diff(
+				'day',
+				min(cast(r.rental_date as date)),
+				max(cast(r.rental_date as date))
+			 ) / (count(r.rental_key) - 1)
+		else null
+	end as avg_days_between_rentals
+
+from customers c
+left join rentals r
+    on c.customer_key = r.customer_key
+left join fav_cat
+    on c.customer_key = fav_cat.customer_key
+
+group by
+    c.customer_key,
+    c.first_name,
+    c.last_name,
+    c.email,
+    c.is_active,
+    c.created_date,
+    fav_cat.favorite_category_key,
+    fav_cat.favorite_category_name,
+    fav_cat.favorite_category_rentals,
+    fav_cat.favorite_category_revenue

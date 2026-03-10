@@ -1,0 +1,44 @@
+{{ config(materialized='table') }}
+
+with r as (
+  select * from {{ ref('stg_rental') }}
+),
+i as (
+  select inventory_id, film_id, store_id
+  from {{ ref('stg_inventory') }}
+),
+p as (
+  select * from {{ ref('agg_payments_by_rental') }}
+),
+base as (
+  select
+    r.rental_id as rental_key,
+    r.rental_date,
+    cast(r.rental_date as date) as rental_date_key,
+
+    r.return_date,
+    cast(r.return_date as date) as return_date_key,
+
+    r.customer_id as customer_key,
+    i.film_id as film_key,
+    i.store_id as store_key,
+    r.staff_id as staff_key
+  from r
+  join i on r.inventory_id = i.inventory_id
+)
+select
+  b.*,
+  -- métricas/flags
+  case when b.return_date is null then false else true end as is_returned,
+  case
+    when b.return_date is null then null
+    else date_diff('day', cast(b.rental_date as date), cast(b.return_date as date))
+  end as rental_days,
+
+  coalesce(p.payment_count, 0) as payment_count,
+  coalesce(p.total_paid, 0) as total_paid,
+  p.first_payment_ts,
+  p.last_payment_ts,
+  case when coalesce(p.total_paid, 0) > 0 then true else false end as is_paid
+from base b
+left join p on b.rental_key = p.rental_key

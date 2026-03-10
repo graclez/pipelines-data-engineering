@@ -1,0 +1,20 @@
+version: 2
+
+sources:
+  - name: airbyte_pfinal   # alias lógico (podés llamarlo dvdrental también)
+    schema: raw            # <- ESTE es el schema real en DuckDB
+    tables:
+      - name: customer
+      - name: rental
+      - name: payment
+      - name: film
+      - name: inventory
+      - name: store
+      - name: staff
+      - name: address
+      - name: city
+      - name: country
+      - name: category
+      - name: film_category
+      - name: actor
+      - name: film_actor
