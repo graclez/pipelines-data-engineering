@@ -24,7 +24,7 @@ Fuente de datos → Airbyte → MotherDuck → dbt → Prefect → Metabase
 
 Este repositorio contiene **dos pipelines independientes**, cada uno implementando un caso analítico diferente.
 
-## 1️⃣ Pipeline dvdrental
+## Pipeline dvdrental
 
 Carpeta:
 
@@ -52,7 +52,7 @@ El pipeline incluye:
 
 ---
 
-## 2️⃣ Pipeline ClassicModels
+## Pipeline ClassicModels
 
 Carpeta:
 
