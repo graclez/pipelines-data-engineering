@@ -1,0 +1,14 @@
+version: 2
+
+sources:
+  - name: classicmodels
+    schema: main
+    tables:
+      - name: customers
+      - name: orders
+      - name: orderdetails
+      - name: products
+      - name: productlines
+      - name: payments
+      - name: employees
+      - name: offices
