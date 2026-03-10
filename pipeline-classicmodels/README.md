@@ -75,14 +75,14 @@ Esto facilita el mantenimiento del proyecto y permite que otros miembros del equ
 
 El desarrollo de este proyecto utiliza las siguientes herramientas y tecnologías:
 
-Python
-dbt
-DuckDB
-MotherDuck
-Airbyte
-Prefect
-Metabase
-Git / GitHub
+* Python
+* dbt
+* DuckDB
+* MotherDuck
+* Airbyte
+* Prefect
+* Metabase
+* Git / GitHub
 
 
 Estas herramientas permiten construir pipelines de transformación reproducibles, versionados y documentados.
