@@ -1,4 +1,4 @@
-# Pipelines Data Engineering
+# Pipelines Data Engineering - Trabajo final
 
 Repositorio que contiene la implementación de **pipelines analíticos end-to-end** desarrollados como parte del proyecto final de **Integración de Datos**.
 
